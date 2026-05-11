@@ -3,7 +3,7 @@
 # build_ios.sh — One-step build script for krkr2 iOS (Flutter)
 #
 # Usage:
-#   ./build_ios.sh [debug|release]
+#   ./build_ios.sh [debug|release] [--simulator]
 #
 # Output: Flutter iOS .app (unsigned, for development/archive)
 #
@@ -23,6 +23,15 @@ PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 BUILD_TYPE="${1:-debug}"
 BUILD_TYPE_LOWER="$(echo "$BUILD_TYPE" | tr '[:upper:]' '[:lower:]')"
+TARGET_SDK="iphoneos"
+
+for arg in "$@"; do
+    case "$arg" in
+        --simulator)
+            TARGET_SDK="iphonesimulator"
+            ;;
+    esac
+done
 
 if [[ "$BUILD_TYPE_LOWER" != "debug" && "$BUILD_TYPE_LOWER" != "release" ]]; then
     echo "Error: Invalid build type '$BUILD_TYPE'. Use 'debug' or 'release'."
@@ -32,9 +41,17 @@ fi
 # Capitalize for CMake preset names
 BUILD_TYPE_CAP="$(echo "${BUILD_TYPE_LOWER:0:1}" | tr '[:lower:]' '[:upper:]')${BUILD_TYPE_LOWER:1}"
 
-CMAKE_CONFIG_PRESET="iOS ${BUILD_TYPE_CAP} Config"
-CMAKE_BUILD_PRESET="iOS ${BUILD_TYPE_CAP} Build"
-CMAKE_BUILD_DIR="$PROJECT_ROOT/out/ios/$BUILD_TYPE_LOWER"
+if [[ "$TARGET_SDK" == "iphonesimulator" ]]; then
+    CMAKE_CONFIG_PRESET="iOS Simulator ${BUILD_TYPE_CAP} Config"
+    CMAKE_BUILD_PRESET="iOS Simulator ${BUILD_TYPE_CAP} Build"
+    CMAKE_BUILD_DIR="$PROJECT_ROOT/out/ios-simulator/$BUILD_TYPE_LOWER"
+    VCPKG_TARGET_TRIPLET="arm64-ios-simulator"
+else
+    CMAKE_CONFIG_PRESET="iOS ${BUILD_TYPE_CAP} Config"
+    CMAKE_BUILD_PRESET="iOS ${BUILD_TYPE_CAP} Build"
+    CMAKE_BUILD_DIR="$PROJECT_ROOT/out/ios/$BUILD_TYPE_LOWER"
+    VCPKG_TARGET_TRIPLET="arm64-ios"
+fi
 
 if [[ -d "$PROJECT_ROOT/.devtools/flutter" ]]; then
     FLUTTER_SDK="$PROJECT_ROOT/.devtools/flutter"
@@ -129,6 +146,7 @@ fi
 log_info "Build type:    $BUILD_TYPE_CAP"
 log_info "Project root:  $PROJECT_ROOT"
 log_info "CMake preset:  $CMAKE_BUILD_PRESET"
+log_info "Target SDK:    $TARGET_SDK"
 log_info "Flutter SDK:   $FLUTTER_SDK"
 log_info "Parallel jobs: $PARALLEL_JOBS"
 
@@ -177,13 +195,32 @@ while IFS= read -r -d '' lib; do
     PROJECT_LIBS+=("$lib")
 done < <(find "$CMAKE_BUILD_DIR" -name "*.a" -not -path "*/vcpkg_installed/*" -not -path "*/cpp/plugins/*" -print0)
 
+# CubismFramework is a standalone support library under cpp/plugins; it is not
+# folded into dependent static archives automatically.
+CUBISM_FRAMEWORK_LIB="$CMAKE_BUILD_DIR/cpp/plugins/libCubismFramework.a"
+if [[ -f "$CUBISM_FRAMEWORK_LIB" ]]; then
+    PROJECT_LIBS+=("$CUBISM_FRAMEWORK_LIB")
+fi
+
+if [[ "$TARGET_SDK" == "iphonesimulator" ]]; then
+    CUBISM_CORE_CONFIG_DIR="$([[ "$BUILD_TYPE_LOWER" == "debug" ]] && echo "Debug-iphonesimulator-arm64" || echo "Release-iphonesimulator-arm64")"
+else
+    CUBISM_CORE_CONFIG_DIR="$([[ "$BUILD_TYPE_LOWER" == "debug" ]] && echo "Debug-iphoneos" || echo "Release-iphoneos")"
+fi
+CUBISM_CORE_LIB="$PROJECT_ROOT/cpp/plugins/cubism/Core/lib/ios/$CUBISM_CORE_CONFIG_DIR/libLive2DCubismCore.a"
+if [[ -f "$CUBISM_CORE_LIB" ]]; then
+    PROJECT_LIBS+=("$CUBISM_CORE_LIB")
+else
+    log_warn "Cubism Core iOS library not found: $CUBISM_CORE_LIB"
+fi
+
 # Merge project libs into libengine_project.a
 # For psdparse: only extract its unique .o files (not already in libengine_api.a)
 MERGE_TMPDIR=$(mktemp -d)
 trap "rm -rf '$MERGE_TMPDIR'" EXIT
 
 # First, merge all project libs normally
-libtool -static -o "$MERGE_TMPDIR/libengine_project_base.a" "${PROJECT_LIBS[@]}"
+/usr/bin/libtool -static -o "$MERGE_TMPDIR/libengine_project_base.a" "${PROJECT_LIBS[@]}"
 
 # Build a set of .o names already in the project library
 ar t "$MERGE_TMPDIR/libengine_project_base.a" | sort -u > "$MERGE_TMPDIR/project_objs.txt"
@@ -207,7 +244,7 @@ done < <(find "$CMAKE_BUILD_DIR/cpp/plugins" -mindepth 3 -name "*.a" -print0 2>/
 if [[ ${#PSDPARSE_UNIQUE_OBJS[@]} -gt 0 ]]; then
     log_info "  Plugin sub-lib unique .o files: ${#PSDPARSE_UNIQUE_OBJS[@]}"
     # Merge project base + unique plugin objects
-    libtool -static -o "$PLUGIN_LIBS_DIR/libengine_project.a" \
+    /usr/bin/libtool -static -o "$PLUGIN_LIBS_DIR/libengine_project.a" \
         "$MERGE_TMPDIR/libengine_project_base.a" "${PSDPARSE_UNIQUE_OBJS[@]}"
 else
     cp "$MERGE_TMPDIR/libengine_project_base.a" "$PLUGIN_LIBS_DIR/libengine_project.a"
@@ -222,7 +259,7 @@ log_info "Project library -> $PLUGIN_LIBS_DIR/libengine_project.a"
 #   libharfbuzz-subset.a (overlaps heavily with libharfbuzz.a)
 VCPKG_EXCLUDE_LIBS="libpng.a|libjpeg.a|libwebpdecoder.a|libharfbuzz-subset.a"
 
-VCPKG_LIB_DIR="$CMAKE_BUILD_DIR/vcpkg_installed/arm64-ios/lib"
+VCPKG_LIB_DIR="$CMAKE_BUILD_DIR/vcpkg_installed/$VCPKG_TARGET_TRIPLET/lib"
 VCPKG_LIBS=()
 if [[ -d "$VCPKG_LIB_DIR" ]]; then
     while IFS= read -r -d '' lib; do
@@ -238,7 +275,7 @@ fi
 log_info "  Vcpkg libs (after exclusion): ${#VCPKG_LIBS[@]}"
 
 # Merge vcpkg libs into libengine_vendors.a
-libtool -static -o "$PLUGIN_LIBS_DIR/libengine_vendors.a" "${VCPKG_LIBS[@]}"
+/usr/bin/libtool -static -o "$PLUGIN_LIBS_DIR/libengine_vendors.a" "${VCPKG_LIBS[@]}"
 
 log_info "Vendors library -> $PLUGIN_LIBS_DIR/libengine_vendors.a"
 
@@ -256,9 +293,17 @@ FLUTTER_BUILD_MODE="$BUILD_TYPE_LOWER"
 log_info "Building Flutter iOS app ($FLUTTER_BUILD_MODE)..."
 
 if [[ "$FLUTTER_BUILD_MODE" == "release" ]]; then
-    (cd "$FLUTTER_APP_DIR" && "$FLUTTER_BIN" build ios --release --no-codesign)
+    if [[ "$TARGET_SDK" == "iphonesimulator" ]]; then
+        (cd "$FLUTTER_APP_DIR" && "$FLUTTER_BIN" build ios --release --simulator --no-codesign)
+    else
+        (cd "$FLUTTER_APP_DIR" && "$FLUTTER_BIN" build ios --release --no-codesign)
+    fi
 else
-    (cd "$FLUTTER_APP_DIR" && "$FLUTTER_BIN" build ios --debug --no-codesign)
+    if [[ "$TARGET_SDK" == "iphonesimulator" ]]; then
+        (cd "$FLUTTER_APP_DIR" && "$FLUTTER_BIN" build ios --debug --simulator --no-codesign)
+    else
+        (cd "$FLUTTER_APP_DIR" && "$FLUTTER_BIN" build ios --debug --no-codesign)
+    fi
 fi
 
 # ============================================================

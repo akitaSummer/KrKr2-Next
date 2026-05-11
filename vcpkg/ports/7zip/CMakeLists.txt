@@ -414,6 +414,10 @@ target_compile_definitions(7zip
         -D_UNICODE
 )
 
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS" AND VCPKG_TARGET_ARCHITECTURE STREQUAL "arm64")
+    target_compile_options(7zip PRIVATE -march=armv8-a+crc+crypto)
+endif()
+
 target_include_directories(7zip
     INTERFACE
         $<INSTALL_INTERFACE:include>/7zip/CPP

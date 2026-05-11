@@ -1,0 +1,151 @@
+diff --git a/cpp/plugins/cubism/Framework/src/Model/CubismModel.cpp b/cpp/plugins/cubism/Framework/src/Model/CubismModel.cpp
+--- a/cpp/plugins/cubism/Framework/src/Model/CubismModel.cpp
++++ b/cpp/plugins/cubism/Framework/src/Model/CubismModel.cpp
+@@ -527,6 +527,7 @@ void CubismModel::Initialize()
+         {
+             _drawableIds.PushBack(CubismFramework::GetIdManager()->GetId(drawableIds[i]));
+             _userDrawableCullings.PushBack(userCulling);
++            _drawableForceHiddenFlags.PushBack(0, false);
+         }
+     }
+ 
+@@ -689,6 +690,41 @@ csmInt32 CubismModel::GetDrawableCount() const
+ {
+     const csmInt32 drawableCount = Core::csmGetDrawableCount(_model);
+     return drawableCount;
++}
++
++void CubismModel::ClearDrawableForceHiddenFlags()
++{
++    _drawableForceHiddenFlags.Assign(GetDrawableCount(), 0, false);
++}
++
++void CubismModel::SetDrawableForceHidden(csmInt32 drawableIndex, csmBool hidden)
++{
++    if (drawableIndex < 0 || drawableIndex >= GetDrawableCount())
++    {
++        return;
++    }
++
++    if (_drawableForceHiddenFlags.GetSize() != static_cast<csmUint32>(GetDrawableCount()))
++    {
++        ClearDrawableForceHiddenFlags();
++    }
++
++    _drawableForceHiddenFlags[drawableIndex] = hidden ? 1 : 0;
++}
++
++csmBool CubismModel::GetDrawableForceHidden(csmInt32 drawableIndex) const
++{
++    if (drawableIndex < 0 || drawableIndex >= GetDrawableCount())
++    {
++        return false;
++    }
++
++    if (_drawableForceHiddenFlags.GetSize() != static_cast<csmUint32>(GetDrawableCount()))
++    {
++        return false;
++    }
++
++    return _drawableForceHiddenFlags[drawableIndex] != 0;
+ }
+ 
+ csmInt32 CubismModel::GetDrawableTextureIndex(csmInt32 drawableIndex) const
+diff --git a/cpp/plugins/cubism/Framework/src/Model/CubismModel.hpp b/cpp/plugins/cubism/Framework/src/Model/CubismModel.hpp
+--- a/cpp/plugins/cubism/Framework/src/Model/CubismModel.hpp
++++ b/cpp/plugins/cubism/Framework/src/Model/CubismModel.hpp
+@@ -569,6 +569,28 @@ public:
+     csmInt32 GetDrawableCount() const;
+ 
+     /**
++     * Clears drawable force-hidden flags.
++     */
++    void ClearDrawableForceHiddenFlags();
++
++    /**
++     * Sets whether a drawable should be skipped by the renderer.
++     *
++     * @param drawableIndex Drawable index
++     * @param hidden Whether to skip drawing the drawable
++     */
++    void SetDrawableForceHidden(csmInt32 drawableIndex, csmBool hidden);
++
++    /**
++     * Returns whether a drawable should be skipped by the renderer.
++     *
++     * @param drawableIndex Drawable index
++     *
++     * @return Whether to skip drawing the drawable
++     */
++    csmBool GetDrawableForceHidden(csmInt32 drawableIndex) const;
++
++    /**
+      * Returns the ID of the drawable.
+      *
+      * @param drawableIndex Drawable index
+@@ -1106,6 +1128,7 @@ private:
+     csmVector<CubismIdHandle> _parameterIds;
+     csmVector<CubismIdHandle> _partIds;
+     csmVector<CubismIdHandle> _drawableIds;
++    csmVector<csmInt32> _drawableForceHiddenFlags;
+     csmVector<CubismModelPartInfo> _partsHierarchy;
+     csmVector<ParameterRepeatData> _userParameterRepeatDataList;
+     csmVector<CullingData> _userDrawableCullings;
+diff --git a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp
+--- a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp
++++ b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderTarget_OpenGLES2.hpp
+@@ -38,6 +38,11 @@
+ #include <GLES2/gl2ext.h>
+ #endif
+ 
++#ifdef CSM_TARGET_ANGLE_ES2
++#include <GLES3/gl3.h>
++#include <GLES2/gl2ext.h>
++#endif
++
+ //------------ LIVE2D NAMESPACE ------------
+ namespace Live2D { namespace Cubism { namespace Framework { namespace Rendering {
+ 
+diff --git a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.cpp b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.cpp
+--- a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.cpp
++++ b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.cpp
+@@ -854,7 +854,8 @@ void CubismRenderer_OpenGLES2::SaveProfile()
+ void CubismRenderer_OpenGLES2::DrawDrawable(csmInt32 drawableIndex)
+ {
+     // Drawableが表示状態でなければ処理をパスする
+-    if (!GetModel()->GetDrawableDynamicFlagIsVisible(drawableIndex))
++    if (GetModel()->GetDrawableForceHidden(drawableIndex) ||
++        !GetModel()->GetDrawableDynamicFlagIsVisible(drawableIndex))
+     {
+         return;
+     }
+diff --git a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp
+--- a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp
++++ b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismRenderer_OpenGLES2.hpp
+@@ -47,6 +47,11 @@
+ #include <GLES2/gl2ext.h>
+ #endif
+ 
++#ifdef CSM_TARGET_ANGLE_ES2
++#include <GLES3/gl3.h>
++#include <GLES2/gl2ext.h>
++#endif
++
+ //------------ LIVE2D NAMESPACE ------------
+ namespace Live2D { namespace Cubism { namespace Framework { namespace Rendering {
+ 
+diff --git a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismShader_OpenGLES2.hpp b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismShader_OpenGLES2.hpp
+--- a/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismShader_OpenGLES2.hpp
++++ b/cpp/plugins/cubism/Framework/src/Rendering/OpenGL/CubismShader_OpenGLES2.hpp
+@@ -40,6 +40,11 @@
+ #include <GLES2/gl2ext.h>
+ #endif
+ 
++#ifdef CSM_TARGET_ANGLE_ES2
++#include <GLES3/gl3.h>
++#include <GLES2/gl2ext.h>
++#endif
++
+ //------------ LIVE2D NAMESPACE ------------
+ namespace Live2D { namespace Cubism { namespace Framework { namespace Rendering {
+ 

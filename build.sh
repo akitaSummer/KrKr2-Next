@@ -12,6 +12,7 @@
 # Options:
 #   debug|release       Build type (default: debug)
 #   --abi=<abis>        Android only: target ABIs (default: arm64-v8a)
+#   --simulator         iOS only: build for iPhone/iPad Simulator
 #   --jobs=<N>          Parallel build jobs (default: 8)
 #   --clean             Clean build artifacts before building
 #   --help, -h          Show this help message
@@ -55,6 +56,7 @@ show_help() {
     echo "  debug|release       Build type (default: debug)"
     echo "  --abi=<abis>        Android only: comma-separated ABIs"
     echo "                      (arm64-v8a, armeabi-v7a, x86_64, x86)"
+    echo "  --simulator         iOS only: build for iPhone/iPad Simulator"
     echo "  --jobs=<N>          Parallel build jobs (default: 8)"
     echo "  --clean             Clean build artifacts before building"
     echo "  --help, -h          Show this help message"
@@ -93,7 +95,7 @@ for arg in "$@"; do
         debug|release|Debug|Release)
             BUILD_TYPE="$(echo "$arg" | tr '[:upper:]' '[:lower:]')"
             ;;
-        --abi=*)
+        --abi=*|--simulator)
             EXTRA_ARGS+=("$arg")
             ;;
         *)

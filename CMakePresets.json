@@ -164,6 +164,31 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release"
       }
+    },
+    {
+      "name": "iOS Simulator Config",
+      "inherits": "iOS Config",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_OSX_SYSROOT": "iphonesimulator",
+        "VCPKG_TARGET_TRIPLET": "arm64-ios-simulator"
+      }
+    },
+    {
+      "name": "iOS Simulator Debug Config",
+      "inherits": "iOS Simulator Config",
+      "binaryDir": "${sourceDir}/out/ios-simulator/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "iOS Simulator Release Config",
+      "inherits": "iOS Simulator Config",
+      "binaryDir": "${sourceDir}/out/ios-simulator/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
     }
   ],
   "buildPresets": [
@@ -198,6 +223,14 @@
     {
       "name": "iOS Release Build",
       "configurePreset": "iOS Release Config"
+    },
+    {
+      "name": "iOS Simulator Debug Build",
+      "configurePreset": "iOS Simulator Debug Config"
+    },
+    {
+      "name": "iOS Simulator Release Build",
+      "configurePreset": "iOS Simulator Release Config"
     }
   ]
 }

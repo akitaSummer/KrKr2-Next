@@ -195,10 +195,12 @@ cpp/plugins/cubism/Core/lib/ios/Debug-iphonesimulator-arm64/libLive2DCubismCore.
 cpp/plugins/cubism/Core/lib/ios/Release-iphonesimulator-arm64/libLive2DCubismCore.a
 ```
 
-`Core/lib` 和 `Framework` 因为授权和体积原因不提交到仓库。新环境可以这样安装：
+`Core/lib` 和 `Framework` 因为授权和体积原因不提交到仓库。新环境可以从 Live2D 官方下载 SDK 后应用项目补丁：
 
 ```bash
-unzip /path/to/CubismSdkForNative-5-r.5.zip -d /tmp/cubism-sdk
+CUBISM_SDK_URL='https://cubism.live2d.com/sdk-native/bin/CubismSdkForNative-5-r.5.zip?event=cubism_sdk_download&sdk_type=Native&user_status=update&user_type=&version=5-r.5&lang=en'
+curl -L "$CUBISM_SDK_URL" -o /tmp/CubismSdkForNative-5-r.5.zip
+unzip /tmp/CubismSdkForNative-5-r.5.zip -d /tmp/cubism-sdk
 mkdir -p cpp/plugins/cubism/Core cpp/plugins/cubism/Framework
 rsync -a --exclude include /tmp/cubism-sdk/CubismSdkForNative-5-r.5/Core/ cpp/plugins/cubism/Core/
 rsync -a /tmp/cubism-sdk/CubismSdkForNative-5-r.5/Framework/ cpp/plugins/cubism/Framework/
